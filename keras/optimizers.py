@@ -471,8 +471,11 @@ class Adam_gradient_noise(Optimizer):
     """
 
     def __init__(self, lr=0.001, beta_1=0.9, beta_2=0.999,
-                 epsilon=1e-8, decay=0., **kwargs):
-        super(Adam, self).__init__(**kwargs)
+                 epsilon=1e-8, decay=0., 
+                 gradient_noise_fun=None,
+                 **kwargs
+                 ):
+        super(Adam_gradient_noise, self).__init__(**kwargs)
         with K.name_scope(self.__class__.__name__):
             self.iterations = K.variable(0, dtype='int64', name='iterations')
             self.lr = K.variable(lr, name='lr')
@@ -481,6 +484,21 @@ class Adam_gradient_noise(Optimizer):
             self.decay = K.variable(decay, name='decay')
         self.epsilon = epsilon
         self.initial_decay = decay
+        self.gradient_noise_fun = gradient_noise_fun
+
+
+    def get_gradients(self, loss, params):
+        grads = K.gradients(loss, params)
+        if hasattr(self, 'clipnorm') and self.clipnorm > 0:
+            norm = K.sqrt(sum([K.sum(K.square(g)) for g in grads]))
+            grads = [clip_norm(g, self.clipnorm, norm) for g in grads]
+        if hasattr(self, 'clipvalue') and self.clipvalue > 0:
+            grads = [K.clip(g, -self.clipvalue, self.clipvalue) for g in grads]
+        if hasattr(self, "gradient_noise_fun") and self.gradient_noise_fun is not None:
+            grads = [g + K.random_normal_variable(shape=g.get_shape(), mean = 0, 
+                    scale = K.cast(self.gradient_noise_fun(self.iterations), "float32")) for g in grads]
+        return grads
+
 
     @interfaces.legacy_get_updates_support
     def get_updates(self, loss, params):
